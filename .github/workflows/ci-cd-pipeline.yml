@@ -1,0 +1,53 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  SHA: ${{ github.sha }}
+  CLOUDSDK_CORE_DISABLE_PROMPTS: 1
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Setup Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: pangeai-nlp
+    
+    - name: Configure gcloud and kubectl
+      run: |
+        gcloud components update kubectl
+        gcloud config set compute/region europe-west1
+        gcloud container clusters get-credentials multi-cluster
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build Docker image
+      run: |
+        docker build -t juihungyuan/react-test -f ./client/Dockerfile.dev ./client
+    
+    - name: Run tests
+      run: |
+        docker run -e CI=true juihungyuan/react-test npm test
+    
+    - name: Deploy
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: bash ./deploy.sh
